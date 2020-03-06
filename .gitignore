@@ -21,3 +21,6 @@ dist/
 doc/_build/
 *.egg-info/
 .pytest_cache/
+.coverage
+.tox
+.venv
