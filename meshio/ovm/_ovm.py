@@ -311,6 +311,9 @@ class OpenVolumeMesh:
         ovm.vertices = mesh.points
         ovm.vertex_props = mesh.point_data
 
+        n_skipped = 0
+        skipped_cell_types = set()
+
         for cell_type, data in mesh.cells:
             if cell_type == "line":
                 for src, dst in data:
@@ -359,6 +362,13 @@ class OpenVolumeMesh:
                         ovm.find_or_add_halfface_from_vertices([c, e, d]),
                         ovm.find_or_add_halfface_from_vertices([c, b, e]),
                     ])
+            else:
+                n_skipped += 1
+                skipped_cell_types.add(cell_type)
+
+        if n_skipped:
+            logging.warn("Skipped {} cell(s) when converting to OVM from these unimplemented types: {}".format(
+                n_skipped, ", ".join(skipped_cell_types)))
 
         return ovm
 
