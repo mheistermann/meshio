@@ -1,5 +1,28 @@
 """
-I/O for OpenVolumeMesh <https://openvolumemesh.org/> native file format.
+I/O for OpenVolumeMesh <https://openvolumemesh.org/> native .ovm file format.
+
+Original author: Martin Heistermann <martin.heistermann@inf.unibe.ch>
+
+This I/O module is a bit more complex than for many other file formats,
+as the OVM format does not describe volumetric cells as tuple of vertices
+for specific polyhedral types, but only describes general polyhedra in terms
+of "half-faces" (oriented faces), which in turn are described by half-edges,
+while edges finally consist of vertex indices.
+
+There are certain impedance mismatches we have to handle:
+
+    - In OVM the n-1-dimensional entities that make up an n-cell are always
+      explicitly represented, a roundtrip conversion meshio->ovm->meshio
+      might end up with additional cells
+
+    - Order of vertices of a cell is not uniquely represented - we might end
+      up with a different order after a roundtrip conversion.
+      For edges and faces we try to preserve ordering inside of edges and faces
+      at a slight runtime and memory cost (we could perform more efficient caching
+      by always storing a known canonical orientation).
+
+      For volumetric cells this could also be achieved by selecting a convention,
+      however currently this is not guaranteed.
 
 """
 import logging
@@ -18,10 +41,11 @@ from .._mesh import Mesh
 DIM = 3
 
 def rotate(seq, first_idx):
+    """rotate list `seq` such that `seq[first_idx]` becomes the first element"""
     return seq[first_idx:] + seq[:first_idx]
 
 def canonicalize_seq(seq):
-    """rotate seq such that the minimal element is the first one"""
+    """rotate `seq` such that the minimal element is the first one"""
     idx = numpy.argmin(seq)
     return rotate(seq, idx)
 
@@ -38,8 +62,10 @@ class OpenVolumeMesh:
         self.faces = []     # tuples of halfedge handles, smallest first
         self.polyhedra = [] # tuples of halffaces handles
 
-        self.cache_edges = defaultdict(list) # vertex handle v -> indices of edges (v, *)
-        self.cache_faces = defaultdict(list) # edge handle e -> indices of faces (e, ...)
+        self.cache_edges = defaultdict(list) # vertex handle v -> indices of edges that contain v
+        self.cache_faces = defaultdict(list) # edge handle e -> [(fh, idx)],
+                                             # where fh is the index of a face that contains a halfedge of e as smallest edge,
+                                             # and idx is that index of that halfedge in the HE list of this face
 
     def find_or_add_halfedge(self, src, dst):
         assert src != dst
@@ -80,11 +106,10 @@ class OpenVolumeMesh:
         canonical = rotate(hes, minidx)
         opposite_hes = opposite(hes)
 
-        eh = hes[0] / 2
+        eh = canonical[0] / 2
 
-        cached = self.cache_faces[eh]
 
-        for fh, cand_minidx in cached:
+        for fh, cand_minidx in self.cache_faces[eh]
             rot_cand = rotate(self.faces[fh], cand_minidx)
             if rot_cand == canonical:
                 return fh * 2
