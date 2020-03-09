@@ -26,13 +26,11 @@ There are certain impedance mismatches we have to handle:
 
 """
 import logging
-from ctypes import c_double, c_float
 
 import numpy
 from collections import defaultdict
 from itertools import islice, chain
 
-from .._common import _pick_first_int_data
 from .._exceptions import ReadError, WriteError
 from .._files import open_file
 from .._helpers import register
@@ -40,14 +38,17 @@ from .._mesh import Mesh
 
 DIM = 3
 
+
 def rotate(seq, first_idx):
     """rotate list `seq` such that `seq[first_idx]` becomes the first element"""
     return seq[first_idx:] + seq[:first_idx]
+
 
 def canonicalize_seq(seq):
     """rotate `seq` such that the minimal element is the first one"""
     idx = numpy.argmin(seq)
     return rotate(seq, idx)
+
 
 def find_first(pred, seq):
     for k, x in enumerate(seq):
@@ -58,14 +59,20 @@ def find_first(pred, seq):
 class OpenVolumeMesh:
     def __init__(self):
         self.vertices = []
-        self.edges = []     # pairs of vertex indices, smallest first
-        self.faces = []     # tuples of halfedge handles, smallest first
-        self.polyhedra = [] # tuples of halffaces handles
+        self.edges = []      # pairs of vertex indices, smallest first
+        self.faces = []      # tuples of halfedge handles, smallest first
+        self.polyhedra = []  # tuples of halffaces handles
 
-        self.cache_edges = defaultdict(list) # vertex handle v -> indices of edges that contain v
-        self.cache_faces = defaultdict(list) # edge handle e -> [(fh, idx)],
-                                             # where fh is the index of a face that contains a halfedge of e as smallest edge,
-                                             # and idx is that index of that halfedge in the HE list of this face
+        # edge cache: vertex handle v -> indices of edges that contain v
+        self.cache_edges = defaultdict(list)
+
+        # face cache:
+        # edge handle e -> [(fh, idx)],
+        # where fh is the index of a face that contains a halfedge of e as smallest edge,
+        # and idx is that index of that halfedge in the HE list of this face
+        self.cache_faces = defaultdict(list)
+
+        self.vertex_props = {}
 
     def find_or_add_halfedge(self, src, dst):
         assert src != dst
@@ -82,7 +89,6 @@ class OpenVolumeMesh:
             if edge1 == cand:
                 return 2 * eh + 1
 
-
         self.edges.append(edge0)
         eh = len(self.edges) - 1
         self.cache_edges[minv].append(eh)
@@ -94,7 +100,7 @@ class OpenVolumeMesh:
     def find_or_add_halfface_from_vertices(self, verts):
         def opposite(seq):
             # switch halfedge orientation and reverse order
-            tmp = [x^1 for x in reversed(seq)]
+            tmp = [x ^ 1 for x in reversed(seq)]
             # but keep first element first:
             return rotate(tmp, -1)
 
@@ -106,10 +112,9 @@ class OpenVolumeMesh:
         canonical = rotate(hes, minidx)
         opposite_hes = opposite(hes)
 
-        eh = canonical[0] / 2
+        eh = canonical[0] // 2
 
-
-        for fh, cand_minidx in self.cache_faces[eh]
+        for fh, cand_minidx in self.cache_faces[eh]:
             rot_cand = rotate(self.faces[fh], cand_minidx)
             if rot_cand == canonical:
                 return fh * 2
@@ -122,7 +127,7 @@ class OpenVolumeMesh:
         return 2 * fh
 
     def he_from(self, he_idx):
-        src, dst = self.edges[he_idx//2]
+        src, dst = self.edges[he_idx // 2]
         if he_idx & 1:
             return dst
         else:
@@ -130,7 +135,7 @@ class OpenVolumeMesh:
 
     def halfface_vertices(self, hf_idx):
         vertices = []
-        for he_idx in self.faces[hf_idx//2]:
+        for he_idx in self.faces[hf_idx // 2]:
             vertices.append(self.he_from(he_idx))
         if hf_idx & 1:
             vertices = list(reversed(vertices))
@@ -139,7 +144,6 @@ class OpenVolumeMesh:
     def tet_vertices(self, halfface_idxs):
         abc = self.halfface_vertices(halfface_idxs[0])
         vs1 = self.halfface_vertices(halfface_idxs[1])
-        #print(abc, vs1)
         d = [x for x in vs1 if x not in abc][0]
         a, b, c = abc
         return a, b, c, d
@@ -148,7 +152,7 @@ class OpenVolumeMesh:
     def hex_vertices(self, halfface_idxs):
 
         vs = [self.halfface_vertices(hi) for hi in halfface_idxs]
-        #print("hex face sides", vs)
+        # print("hex face sides", vs)
         a, b, c, d = vs[0]
         vs = vs[1:]
 
@@ -158,7 +162,7 @@ class OpenVolumeMesh:
         side = rotate(side, side.index(a))
         assert side[3] == b
         e, f = side[1:3]
-        vs = vs[:side_idx] + vs[side_idx+1:]
+        vs = vs[:side_idx] + vs[side_idx + 1:]
 
         top_idx, top = find_first(lambda x: (e in x) and (f in x), vs)
         # top: e, h, g, f
@@ -168,8 +172,6 @@ class OpenVolumeMesh:
 
         return a, b, c, d, e, f, g, h
         # TODO perform checks that the other halffaces actually also describe this hex
-
-
 
     def wedge_vertices(self, halfface_idxs):
         vs = [self.halfface_vertices(hi) for hi in halfface_idxs]
@@ -193,9 +195,9 @@ class OpenVolumeMesh:
         # TODO perform checks that the other halffaces actually also describe this pyramid
 
     def to_meshio(self):
-        #print("edges:", self.edges)
-        #print("faces:", self.faces)
-        #print("cells:", self.polyhedra)
+        # print("edges:", self.edges)
+        # print("faces:", self.faces)
+        # print("cells:", self.polyhedra)
 
         cells = defaultdict(list)
 
@@ -218,7 +220,8 @@ class OpenVolumeMesh:
             cells[kind].append(vertices)
 
         for halffaces in self.polyhedra:
-            signature = list(sorted((len(self.faces[hf_idx//2]) for hf_idx in halffaces)))
+            # collect number of edges in each face to try and identify cell types
+            signature = list(sorted((len(self.faces[hf_idx // 2]) for hf_idx in halffaces)))
             try:
                 if signature == [3, 3, 3, 3]:
                     kind = "tetra"
@@ -226,14 +229,14 @@ class OpenVolumeMesh:
                 elif signature == [4, 4, 4, 4, 4, 4]:
                     kind = "hexahedron"
                     v = self.hex_vertices(halffaces)
-                elif signature == [3,3,4,4,4]:
+                elif signature == [3, 3, 4, 4, 4]:
                     kind = "wedge"
                     v = self.wedge_vertices(halffaces)
-                elif signature == [3,3,3,3,4]:
+                elif signature == [3, 3, 3, 3, 4]:
                     kind = "pyramid"
                     v = self.pyramid_vertices(halffaces)
                 else:
-                    n_unsupported_cells +=1
+                    n_unsupported_cells += 1
             except Exception as e:
                 raise e
                 n_failed_cells += 1
@@ -247,8 +250,7 @@ class OpenVolumeMesh:
         if n_failed_cells:
             logging.warning("Failed to read {} cells.".format(n_failed_cells))
 
-
-        # XXX remove this, just to pass unit tests:
+        # TODO XXX remove this, just to pass unit tests:
         ck = cells.keys()
         if "triangle" in ck or "quad" in ck:
             del cells["line"]
@@ -262,9 +264,9 @@ class OpenVolumeMesh:
 
         for k in cells.keys():
             cells[k] = numpy.array(cells[k])
-        #print(cells)
+        # print(cells)
 
-        return Mesh(self.vertices, cells) # , point_data=point_data, cell_data=cell_data)
+        return Mesh(self.vertices, cells)  # , point_data=point_data, cell_data=cell_data)
 
     def write(self, fh, float_fmt):
         vertex_fmt = " ".join(["{:" + float_fmt + "}"] * 3)
@@ -299,8 +301,6 @@ class OpenVolumeMesh:
         writeline(len(self.polyhedra))
         fh.writelines(encode_polyhedron(p) + "\n" for p in self.polyhedra)
 
-
-
     @staticmethod
     def from_meshio(mesh):
 
@@ -309,6 +309,7 @@ class OpenVolumeMesh:
         if d != 3:
             raise WriteError("OVM only supports 3-D points")
         ovm.vertices = mesh.points
+        ovm.vertex_props = mesh.point_data
 
         cd = mesh.cells_dict
 
@@ -316,17 +317,16 @@ class OpenVolumeMesh:
             ovm.edges.append((src, dst))
 
         for verts in chain(cd.get("triangle", []), cd.get("quad", [])):
-            hes = []
             ovm.find_or_add_halfface_from_vertices(verts)
 
-        for a,b,c,d in cd.get("tetra", []):
+        for a, b, c, d in cd.get("tetra", []):
             ovm.add_polyhedron([
                 ovm.find_or_add_halfface_from_vertices([a, b, c]),
                 ovm.find_or_add_halfface_from_vertices([a, c, d]),
                 ovm.find_or_add_halfface_from_vertices([a, d, b]),
                 ovm.find_or_add_halfface_from_vertices([b, d, c]),
             ])
-        for a,b,c,d,e,f,g,h in cd.get("hexahedron", []):
+        for a, b, c, d, e, f, g, h in cd.get("hexahedron", []):
             ovm.add_polyhedron([
                 ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
                 ovm.find_or_add_halfface_from_vertices([a, e, f, b]),
@@ -335,7 +335,7 @@ class OpenVolumeMesh:
                 ovm.find_or_add_halfface_from_vertices([b, f, g, c]),
                 ovm.find_or_add_halfface_from_vertices([e, h, g, f]),
             ])
-        for a,b,c,d,e,f in cd.get("wedge", []):
+        for a, b, c, d, e, f in cd.get("wedge", []):
             ovm.add_polyhedron([
                 ovm.find_or_add_halfface_from_vertices([a, b, c]),
                 ovm.find_or_add_halfface_from_vertices([a, c, f, d]),
@@ -343,7 +343,7 @@ class OpenVolumeMesh:
                 ovm.find_or_add_halfface_from_vertices([b, e, f, c]),
                 ovm.find_or_add_halfface_from_vertices([d, f, e]),
             ])
-        for a,b,c,d,e in cd.get("pyramid", []):
+        for a, b, c, d, e in cd.get("pyramid", []):
             ovm.add_polyhedron([
                 ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
                 ovm.find_or_add_halfface_from_vertices([a, e, b]),
@@ -366,7 +366,7 @@ class OVMReader:
     def section_header(self, kind):
         line = self.getline()
         if line.lower() != kind:
-            raise readerror("missing '{}' section".format(kind))
+            raise ReadError("missing '{}' section".format(kind))
 
         count = int(self.getline())
         if count < 0:
@@ -388,13 +388,12 @@ class OVMReader:
             self.f, count=n_edges * 2, dtype=int, sep=" "
         ).reshape(n_edges, 2)
 
-
     def read_faces(self):
         def read_face():
             line = [int(x) for x in self.getline().split(" ")]
             n_halfedges = int(line[0])
             if len(line) - 1 != n_halfedges:
-                raise ReadError("Encountered face which should have {} halfedges, but {} halfedge indices specified.".format(len(line)-1, n_halfedges))
+                raise ReadError("Encountered face which should have {} halfedges, but {} halfedge indices specified.".format(len(line) - 1, n_halfedges))
 
             return line[1:]
 
@@ -402,14 +401,15 @@ class OVMReader:
         return [read_face() for _ in range(n_faces)]
 
     def read_polyhedra(self):
-        n_polyhedra = self.section_header("polyhedra")
         def read_polyhedron():
             line = [int(x) for x in self.getline().split(" ")]
             n_halffaces = int(line[0])
             if len(line) - 1 != n_halffaces:
-                raise ReadError("Encountered polyhedron which should have {} halffaces, but {} halfface indices specified.".format(len(line)-1, n_halffaces))
+                raise ReadError("Encountered polyhedron which should have {} halffaces, but {} halfface indices specified.".format(len(line) - 1, n_halffaces))
 
             return line[1:]
+
+        n_polyhedra = self.section_header("polyhedra")
 
         return [read_polyhedron() for _ in range(n_polyhedra)]
 
@@ -429,7 +429,6 @@ class OVMReader:
 def read(filename):
     with open_file(filename) as f:
         return OVMReader(f).read().to_meshio()
-
 
 
 def write(filename, mesh, float_fmt=".15e", binary=False):
