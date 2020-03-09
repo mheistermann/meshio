@@ -311,46 +311,54 @@ class OpenVolumeMesh:
         ovm.vertices = mesh.points
         ovm.vertex_props = mesh.point_data
 
-        cd = mesh.cells_dict
+        for cell_type, data in mesh.cells:
+            if cell_type == "line":
+                for src, dst in data:
+                    ovm.find_or_add_halfedge(src, dst)
 
-        for src, dst in cd.get("line", []):
-            ovm.edges.append((src, dst))
+            elif cell_type in ["triangle", "quad"]:
+                for verts in data:
+                    ovm.find_or_add_halfface_from_vertices(verts)
 
-        for verts in chain(cd.get("triangle", []), cd.get("quad", [])):
-            ovm.find_or_add_halfface_from_vertices(verts)
+            elif cell_type == "tetra":
+                for a, b, c, d in data:
+                    ovm.add_polyhedron([
+                        ovm.find_or_add_halfface_from_vertices([a, b, c]),
+                        ovm.find_or_add_halfface_from_vertices([a, c, d]),
+                        ovm.find_or_add_halfface_from_vertices([a, d, b]),
+                        ovm.find_or_add_halfface_from_vertices([b, d, c]),
+                    ])
 
-        for a, b, c, d in cd.get("tetra", []):
-            ovm.add_polyhedron([
-                ovm.find_or_add_halfface_from_vertices([a, b, c]),
-                ovm.find_or_add_halfface_from_vertices([a, c, d]),
-                ovm.find_or_add_halfface_from_vertices([a, d, b]),
-                ovm.find_or_add_halfface_from_vertices([b, d, c]),
-            ])
-        for a, b, c, d, e, f, g, h in cd.get("hexahedron", []):
-            ovm.add_polyhedron([
-                ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
-                ovm.find_or_add_halfface_from_vertices([a, e, f, b]),
-                ovm.find_or_add_halfface_from_vertices([a, d, h, e]),
-                ovm.find_or_add_halfface_from_vertices([c, g, h, d]),
-                ovm.find_or_add_halfface_from_vertices([b, f, g, c]),
-                ovm.find_or_add_halfface_from_vertices([e, h, g, f]),
-            ])
-        for a, b, c, d, e, f in cd.get("wedge", []):
-            ovm.add_polyhedron([
-                ovm.find_or_add_halfface_from_vertices([a, b, c]),
-                ovm.find_or_add_halfface_from_vertices([a, c, f, d]),
-                ovm.find_or_add_halfface_from_vertices([a, d, e, b]),
-                ovm.find_or_add_halfface_from_vertices([b, e, f, c]),
-                ovm.find_or_add_halfface_from_vertices([d, f, e]),
-            ])
-        for a, b, c, d, e in cd.get("pyramid", []):
-            ovm.add_polyhedron([
-                ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
-                ovm.find_or_add_halfface_from_vertices([a, e, b]),
-                ovm.find_or_add_halfface_from_vertices([a, d, e]),
-                ovm.find_or_add_halfface_from_vertices([c, e, d]),
-                ovm.find_or_add_halfface_from_vertices([c, b, e]),
-            ])
+            elif cell_type == "hexahedron":
+                for a, b, c, d, e, f, g, h in data:
+                    ovm.add_polyhedron([
+                        ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
+                        ovm.find_or_add_halfface_from_vertices([a, e, f, b]),
+                        ovm.find_or_add_halfface_from_vertices([a, d, h, e]),
+                        ovm.find_or_add_halfface_from_vertices([c, g, h, d]),
+                        ovm.find_or_add_halfface_from_vertices([b, f, g, c]),
+                        ovm.find_or_add_halfface_from_vertices([e, h, g, f]),
+                    ])
+
+            elif cell_type == "wedge":
+                for a, b, c, d, e, f in data:
+                    ovm.add_polyhedron([
+                        ovm.find_or_add_halfface_from_vertices([a, b, c]),
+                        ovm.find_or_add_halfface_from_vertices([a, c, f, d]),
+                        ovm.find_or_add_halfface_from_vertices([a, d, e, b]),
+                        ovm.find_or_add_halfface_from_vertices([b, e, f, c]),
+                        ovm.find_or_add_halfface_from_vertices([d, f, e]),
+                    ])
+
+            elif cell_type == "pyramid":
+                for a, b, c, d, e in data:
+                    ovm.add_polyhedron([
+                        ovm.find_or_add_halfface_from_vertices([a, b, c, d]),
+                        ovm.find_or_add_halfface_from_vertices([a, e, b]),
+                        ovm.find_or_add_halfface_from_vertices([a, d, e]),
+                        ovm.find_or_add_halfface_from_vertices([c, e, d]),
+                        ovm.find_or_add_halfface_from_vertices([c, b, e]),
+                    ])
 
         return ovm
 
