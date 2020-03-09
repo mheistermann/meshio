@@ -42,22 +42,25 @@ class OpenVolumeMesh:
         self.cache_faces = defaultdict(list) # edge handle e -> indices of faces (e, ...)
 
     def find_or_add_halfedge(self, src, dst):
-        if src < dst:
-            edge = src, dst
-            flip = False
-        else:
-            edge = dst, src
-            flip = True
+        assert src != dst
 
-        for eh in self.cache_edges[edge[0]]:
+        minv = min(src, dst)
+
+        edge0 = (src, dst)
+        edge1 = (dst, src)
+
+        for eh in self.cache_edges[minv]:
             cand = self.edges[eh]
-            if cand[1] == edge[1]:
-                return 2 * eh + flip
+            if edge0 == cand:
+                return 2 * eh
+            if edge1 == cand:
+                return 2 * eh + 1
 
-        self.edges.append(edge)
+
+        self.edges.append(edge0)
         eh = len(self.edges) - 1
-        self.cache_edges[edge[0]].append(eh)
-        return 2 * eh + flip
+        self.cache_edges[minv].append(eh)
+        return 2 * eh
 
     def add_polyhedron(self, halffaces):
         self.polyhedra.append(halffaces)
@@ -72,23 +75,25 @@ class OpenVolumeMesh:
         hes = []
         for src, dst in zip(verts, chain(islice(verts, 1, None), [verts[0]])):
             hes.append(self.find_or_add_halfedge(src, dst))
-        hes = canonicalize_seq(hes)
+
+        minidx = numpy.argmin(hes)
+        canonical = rotate(hes, minidx)
+        opposite_hes = opposite(hes)
 
         eh = hes[0] / 2
 
         cached = self.cache_faces[eh]
-        for fh in cached:
-            if self.faces[fh] == hes:
-                return fh * 2
 
-        opposite_hes = opposite(hes)
-        for fh in cached:
-            if self.faces[fh] == opposite_hes:
+        for fh, cand_minidx in cached:
+            rot_cand = rotate(self.faces[fh], cand_minidx)
+            if rot_cand == canonical:
+                return fh * 2
+            if rot_cand == opposite_hes:
                 return fh * 2 + 1
 
         self.faces.append(hes)
         fh = len(self.faces) - 1
-        self.cache_faces[eh].append(fh)
+        self.cache_faces[eh].append((fh, minidx))
         return 2 * fh
 
     def he_from(self, he_idx):
