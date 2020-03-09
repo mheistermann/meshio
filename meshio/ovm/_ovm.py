@@ -34,43 +34,61 @@ def find_first(pred, seq):
 class OpenVolumeMesh:
     def __init__(self):
         self.vertices = []
-        self.edges = []
-        self.faces = []
-        self.polyhedra = []
+        self.edges = []     # pairs of vertex indices, smallest first
+        self.faces = []     # tuples of halfedge handles, smallest first
+        self.polyhedra = [] # tuples of halffaces handles
+
+        self.cache_edges = defaultdict(list) # vertex handle v -> indices of edges (v, *)
+        self.cache_faces = defaultdict(list) # edge handle e -> indices of faces (e, ...)
 
     def find_or_add_halfedge(self, src, dst):
-        try:
-            return 2 * self.edges.index((src, dst))
-        except ValueError:
-            pass
-        try:
-            return 2 * self.edges.index((dst, src)) + 1
-        except ValueError:
-            pass
-        self.edges.append((src, dst))
+        if src < dst:
+            edge = src, dst
+            flip = False
+        else:
+            edge = dst, src
+            flip = True
+
+        for eh in self.cache_edges[edge[0]]:
+            cand = self.edges[eh]
+            if cand[1] == edge[1]:
+                return 2 * eh + flip
+
+        self.edges.append(edge)
         eh = len(self.edges) - 1
-        return 2 * eh
+        self.cache_edges[edge[0]].append(eh)
+        return 2 * eh + flip
 
     def add_polyhedron(self, halffaces):
         self.polyhedra.append(halffaces)
 
     def find_or_add_halfface_from_vertices(self, verts):
         def opposite(seq):
-            return [x^1 for x in reversed(seq)]
+            # switch halfedge orientation and reverse order
+            tmp = [x^1 for x in reversed(seq)]
+            # but keep first element first:
+            return rotate(tmp, -1)
 
         hes = []
         for src, dst in zip(verts, chain(islice(verts, 1, None), [verts[0]])):
             hes.append(self.find_or_add_halfedge(src, dst))
-        try:
-            return 2 * self.faces.index(canonicalize_seq(hes))
-        except ValueError:
-            pass
-        try:
-            return 2 * self.faces.index(canonicalize_seq(opposite(hes))) + 1
-        except ValueError:
-            pass
+        hes = canonicalize_seq(hes)
+
+        eh = hes[0] / 2
+
+        cached = self.cache_faces[eh]
+        for fh in cached:
+            if self.faces[fh] == hes:
+                return fh * 2
+
+        opposite_hes = opposite(hes)
+        for fh in cached:
+            if self.faces[fh] == opposite_hes:
+                return fh * 2 + 1
+
         self.faces.append(hes)
         fh = len(self.faces) - 1
+        self.cache_faces[eh].append(fh)
         return 2 * fh
 
     def he_from(self, he_idx):
