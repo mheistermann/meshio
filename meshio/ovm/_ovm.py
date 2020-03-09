@@ -10,7 +10,7 @@ from collections import defaultdict
 from itertools import islice, chain
 
 from .._common import _pick_first_int_data
-from .._exceptions import ReadError
+from .._exceptions import ReadError, WriteError
 from .._files import open_file
 from .._helpers import register
 from .._mesh import Mesh
@@ -384,7 +384,9 @@ def read(filename):
 
 
 
-def write(filename, mesh, float_fmt=".15e"):
+def write(filename, mesh, float_fmt=".15e", binary=False):
+    if binary:
+        raise WriteError("OVM format currently is ASCII-only")
     ovm = OpenVolumeMesh.from_meshio(mesh)
     with open_file(filename, "w") as fh:
         ovm.write(fh, float_fmt=float_fmt)
