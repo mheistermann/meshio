@@ -362,6 +362,9 @@ class OpenVolumeMesh:
                         ovm.find_or_add_halfface_from_vertices([c, e, d]),
                         ovm.find_or_add_halfface_from_vertices([c, b, e]),
                     ])
+            elif cell_type == "vertex":
+                # No need to handle this, all vertices are already added.
+                pass
             else:
                 n_skipped += 1
                 skipped_cell_types.add(cell_type)
