@@ -40,6 +40,7 @@ DIM = 3
 
 
 def rotate(seq, first_idx):
+    assert isinstance(seq, list) # numpy.ndarray adds instead of concatenating with +
     """rotate list `seq` such that `seq[first_idx]` becomes the first element"""
     return seq[first_idx:] + seq[:first_idx]
 
@@ -146,7 +147,7 @@ class OpenVolumeMesh:
     def tet_vertices(self, halfface_idxs):
         abc = self.halfface_vertices(halfface_idxs[0])
         vs1 = self.halfface_vertices(halfface_idxs[1])
-        d = [x for x in vs1 if x not in abc][0]
+        d = next(x for x in vs1 if x not in abc)
         a, b, c = abc
         return a, b, c, d
         # TODO perform checks that the other halffaces actually also describe this tet
