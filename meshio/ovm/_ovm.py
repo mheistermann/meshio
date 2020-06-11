@@ -110,7 +110,10 @@ class OpenVolumeMesh:
 
         minidx = numpy.argmin(hes)
         canonical = rotate(hes, minidx)
-        opposite_hes = opposite(hes)
+        opposite_hes = opposite(canonical)
+        # Note that opposite_hes still starts with the smallest halfedge idx,
+        # as switching HE orientation of 2 non-opposite halfedges does not change
+        # order, and one face can only contain each edge once.
 
         eh = canonical[0] // 2
 
