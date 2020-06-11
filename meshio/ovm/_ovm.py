@@ -67,9 +67,8 @@ class OpenVolumeMesh:
         self.cache_edges = defaultdict(list)
 
         # face cache:
-        # edge handle e -> [(fh, idx)],
-        # where fh is the index of a face that contains a halfedge of e as smallest edge,
-        # and idx is that index of that halfedge in the HE list of this face
+        # edge handle e -> [fh, ...],
+        # where fh is the index of a face that contains a halfedge of e as smallest edge
         self.cache_faces = defaultdict(list)
 
         self.vertex_props = {}
@@ -105,7 +104,7 @@ class OpenVolumeMesh:
             return rotate(tmp, -1)
 
         hes = []
-        for src, dst in zip(verts, chain(islice(verts, 1, None), [verts[0]])):
+        for src, dst in zip(verts, rotate(list(verts), 1)):
             hes.append(self.find_or_add_halfedge(src, dst))
 
         minidx = numpy.argmin(hes)
@@ -117,16 +116,16 @@ class OpenVolumeMesh:
 
         eh = canonical[0] // 2
 
-        for fh, cand_minidx in self.cache_faces[eh]:
-            rot_cand = rotate(self.faces[fh], cand_minidx)
+        for fh in self.cache_faces[eh]:
+            rot_cand = self.faces[fh]
             if rot_cand == canonical:
                 return fh * 2
             if rot_cand == opposite_hes:
                 return fh * 2 + 1
 
-        self.faces.append(hes)
+        self.faces.append(canonical) # TODO: add `canonical` here and skip cand_minidx?
         fh = len(self.faces) - 1
-        self.cache_faces[eh].append((fh, minidx))
+        self.cache_faces[eh].append(fh)
         return 2 * fh
 
     def he_from(self, he_idx):
